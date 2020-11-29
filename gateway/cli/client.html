@@ -6,6 +6,7 @@
         window.addEventListener("load", function(evt) {
             var output = document.getElementById("output");
             var input = document.getElementById("input");
+            var token = document.getElementById("token");
             var ws;
             var print = function(message) {
                 var d = document.createElement("div");
@@ -46,8 +47,8 @@
                 if (!ws) {
                     return false;
                 }
-                print("JOIN: " + input.value);
-                ws.send(JSON.stringify({type: "JOIN", data: {room: input.value}}));
+                print("JOIN: " + input.value+" TOKEN:"+token.value);
+                ws.send(JSON.stringify({type: "JOIN", data: {room: input.value,token:token.value}}));
                 return false;
             };
             document.getElementById("leave").onclick = function(evt) {
@@ -71,7 +72,8 @@
         <form>
             <button id="open">Open</button>
             <button id="close">Close</button>
-            <input id="input" type="text" value="默认房间">
+            <input id="input" type="text" value="gxx">
+            <input id="token" type="text" value="61b2fa76317a11eba2c49801a79ea713">
             <button id="join">JOIN</button>
             <button id="leave">LEAVE</button>
         </form>

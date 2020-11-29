@@ -1,20 +1,20 @@
 package gateway
 
 import (
+	"github.com/guxingxin/go-push/common"
 	"sync"
-	"github.com/owenliang/go-push/common"
 )
 
 // 房间
 type Room struct {
 	rwMutex sync.RWMutex
-	roomId string
+	roomId  string
 	id2Conn map[uint64]*WSConnection
 }
 
 func InitRoom(roomId string) (room *Room) {
-	room = &Room {
-		roomId: roomId,
+	room = &Room{
+		roomId:  roomId,
 		id2Conn: make(map[uint64]*WSConnection),
 	}
 	return
@@ -37,7 +37,7 @@ func (room *Room) Join(wsConn *WSConnection) (err error) {
 	return
 }
 
-func (room *Room) Leave(wsConn* WSConnection) (err error) {
+func (room *Room) Leave(wsConn *WSConnection) (err error) {
 	var (
 		existed bool
 	)
@@ -50,6 +50,12 @@ func (room *Room) Leave(wsConn* WSConnection) (err error) {
 		return
 	}
 
+	DebugW("room leave", "room conn size", len(room.id2Conn), "conn room size", len(wsConn.rooms))
+
+	if len(wsConn.rooms) <= 1 && len(room.id2Conn) <= 1 {
+		//只允许加一个房间
+		go RoomBehavior(room.roomId, true)
+	}
 	delete(room.id2Conn, wsConn.connId)
 	return
 }

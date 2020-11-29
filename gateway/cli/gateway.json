@@ -51,7 +51,7 @@
   "bucketWorkerCount": 32,
 
   "每个连接最多加入房间数量": "目前房间ID没有校验, 所以先做简单的数量控制",
-  "maxJoinRoom": 5,
+  "maxJoinRoom": 1,
 
   "待分发队列的长度": "分发队列缓冲所有待推送的消息, 等待被分发到Bucket",
   "dispatchChannelSize": 100000,
@@ -63,5 +63,17 @@
   "bucketJobChannelSize": 1000,
 
   "Bucket发送协程的数量": "每个Bucket有多个协程并发的推送消息",
-  "bucketJobWorkerCount": 32
+  "bucketJobWorkerCount": 2,
+
+  "日志存储目录": "建议和逻辑服务器放同一个目录",
+  "logPath": "/var/log/go_log",
+
+  "是否开启验权": "是否开启验权",
+  "needAuth": false,
+
+  "授权接口地址": "授权接口地址",
+  "authApi": "http://localhost:1024/inner/auth_check",
+
+  "行为上报地址": "行为上报地址",
+  "behaviorApi": "http://localhost:1024/inner/room_behavior"
 }

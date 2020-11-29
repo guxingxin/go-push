@@ -1,10 +1,13 @@
 package gateway
 
 import (
-	"time"
-	"github.com/gorilla/websocket"
+	"bytes"
 	"encoding/json"
-	"github.com/owenliang/go-push/common"
+	"github.com/gorilla/websocket"
+	"github.com/guxingxin/go-push/common"
+	"io/ioutil"
+	"net/http"
+	"time"
 )
 
 // 每隔1秒, 检查一次连接是否健康
@@ -12,16 +15,17 @@ func (wsConnection *WSConnection) heartbeatChecker() {
 	var (
 		timer *time.Timer
 	)
+	DebugW("heartbeatChecker")
 	timer = time.NewTimer(time.Duration(G_config.WsHeartbeatInterval) * time.Second)
 	for {
 		select {
-		case <- timer.C:
+		case <-timer.C:
 			if !wsConnection.IsAlive() {
 				wsConnection.Close()
 				goto EXIT
 			}
 			timer.Reset(time.Duration(G_config.WsHeartbeatInterval) * time.Second)
-		case <- wsConnection.closeChan:
+		case <-wsConnection.closeChan:
 			timer.Stop()
 			goto EXIT
 		}
@@ -53,7 +57,7 @@ func (wsConnection *WSConnection) handlePing(bizReq *common.BizMessage) (bizResp
 func (wsConnection *WSConnection) handleJoin(bizReq *common.BizMessage) (bizResp *common.BizMessage, err error) {
 	var (
 		bizJoinData *common.BizJoinData
-		existed bool
+		existed     bool
 	)
 	bizJoinData = &common.BizJoinData{}
 	if err = json.Unmarshal(bizReq.Data, bizJoinData); err != nil {
@@ -63,6 +67,53 @@ func (wsConnection *WSConnection) handleJoin(bizReq *common.BizMessage) (bizResp
 		err = common.ERR_ROOM_ID_INVALID
 		return
 	}
+	if len(bizJoinData.Token) == 0 {
+		err = common.ERR_TOKEN_INVALID
+		return
+	}
+
+	if G_config.NeedAuth {
+		//去逻辑服务器校验权限
+		args := common.AuthCheckArgs{
+			AccessToken: bizJoinData.Token,
+			RoomId:      bizJoinData.Room,
+		}
+		b, _ := json.Marshal(&args)
+		rsp, er := http.Post(G_config.AuthApi, "application/json", bytes.NewReader(b))
+
+		if er != nil {
+			DebugW("auth", "err", er, "url", G_config.AuthApi, "args", args)
+			err = common.ERR_AUTH_INVALID
+			return
+		}
+
+		defer rsp.Body.Close()
+		data, er := ioutil.ReadAll(rsp.Body)
+		if er != nil {
+			DebugW("auth", "err", er, "url", G_config.AuthApi, "args", args)
+			err = common.ERR_AUTH_INVALID
+			return
+		}
+
+		reply := common.AuthCheckReply{}
+
+		er = json.Unmarshal(data, &reply)
+
+		if er != nil {
+			DebugW("auth", "err", er, "url", G_config.AuthApi, "args", args)
+			err = common.ERR_AUTH_INVALID
+			return
+		}
+
+		if reply.Status.State != 0 || reply.Data.UserId != "" {
+			DebugW("auth", "err", reply, "url", G_config.AuthApi, "args", args)
+			err = common.ERR_AUTH_INVALID
+			return
+		}
+
+		DebugW("auth", "args", args, "user", reply.Data.UserId)
+	}
+
 	if len(wsConnection.rooms) >= G_config.MaxJoinRoom {
 		// 超过了房间数量限制, 忽略这个请求
 		return
@@ -78,14 +129,59 @@ func (wsConnection *WSConnection) handleJoin(bizReq *common.BizMessage) (bizResp
 	}
 	// 建立连接 -> 房间的关系
 	wsConnection.rooms[bizJoinData.Room] = true
+
+	go RoomBehavior(bizJoinData.Room, false)
+
 	return
+}
+
+func RoomBehavior(room string, logoff bool) {
+	behavior := 1
+	if logoff {
+		behavior = 2
+	}
+
+	//上报行为
+	args := common.RoomBehaviorArgs{
+		RoomId:   room,
+		Behavior: behavior,
+	}
+	b, _ := json.Marshal(&args)
+	rsp, er := http.Post(G_config.BehaviorApi, "application/json", bytes.NewReader(b))
+
+	if er != nil {
+		DebugW("behavior", "err", er, "url", G_config.AuthApi, "args", args)
+		return
+	}
+
+	defer rsp.Body.Close()
+	data, er := ioutil.ReadAll(rsp.Body)
+	if er != nil {
+		DebugW("behavior", "err", er, "url", G_config.AuthApi, "args", args)
+		return
+	}
+
+	reply := common.RoomBehaviorReply{}
+
+	er = json.Unmarshal(data, &reply)
+
+	if er != nil {
+		DebugW("behavior", "err", er, "url", G_config.AuthApi, "args", args)
+		return
+	}
+
+	if reply.Status.State == 0 {
+		DebugW("behavior", "logoff", logoff, "success", reply.Status)
+	} else {
+		DebugW("behavior", "logoff", logoff, "failed", reply.Status)
+	}
 }
 
 // 处理LEAVE请求
 func (wsConnection *WSConnection) handleLeave(bizReq *common.BizMessage) (bizResp *common.BizMessage, err error) {
 	var (
 		bizLeaveData *common.BizLeaveData
-		existed bool
+		existed      bool
 	)
 	bizLeaveData = &common.BizLeaveData{}
 	if err = json.Unmarshal(bizReq.Data, bizLeaveData); err != nil {
@@ -124,10 +220,10 @@ func (wsConnection *WSConnection) leaveAll() {
 func (wsConnection *WSConnection) WSHandle() {
 	var (
 		message *common.WSMessage
-		bizReq *common.BizMessage
+		bizReq  *common.BizMessage
 		bizResp *common.BizMessage
-		err error
-		buf []byte
+		err     error
+		buf     []byte
 	)
 
 	// 连接加入管理器, 可以推送端查找到
@@ -165,10 +261,12 @@ func (wsConnection *WSConnection) WSHandle() {
 				goto ERR
 			}
 		case "JOIN":
+			DebugW(bizReq.Type, "room", wsConnection.rooms, "data", string(bizReq.Data))
 			if bizResp, err = wsConnection.handleJoin(bizReq); err != nil {
 				goto ERR
 			}
 		case "LEAVE":
+			DebugW(bizReq.Type, "room", wsConnection.rooms, "data", string(bizReq.Data))
 			if bizResp, err = wsConnection.handleLeave(bizReq); err != nil {
 				goto ERR
 			}
@@ -193,6 +291,7 @@ ERR:
 	// 确保连接关闭
 	wsConnection.Close()
 
+	DebugW("WSHandle", "err", err)
 	// 离开所有房间
 	wsConnection.leaveAll()
 

@@ -1,16 +1,16 @@
 package main
 
 import (
-	"github.com/owenliang/go-push/gateway"
-	"fmt"
-	"os"
 	"flag"
+	"fmt"
+	"github.com/guxingxin/go-push/gateway"
+	"os"
 	"runtime"
 	"time"
 )
 
 var (
-	confFile string		// 配置文件路径
+	confFile string // 配置文件路径
 )
 
 func initArgs() {
@@ -22,7 +22,7 @@ func initEnv() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
-func main()  {
+func main() {
 	var (
 		err error
 	)
@@ -35,6 +35,12 @@ func main()  {
 	if err = gateway.InitConfig(confFile); err != nil {
 		goto ERR
 	}
+
+	// 初始化日志
+	if err = gateway.InitLogger(); err != nil {
+		goto ERR
+	}
+	defer gateway.Sync()
 
 	// 统计
 	if err = gateway.InitStats(); err != nil {
