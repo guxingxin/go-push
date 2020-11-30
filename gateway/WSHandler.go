@@ -105,7 +105,7 @@ func (wsConnection *WSConnection) handleJoin(bizReq *common.BizMessage) (bizResp
 			return
 		}
 
-		if reply.Status.State != 0 || reply.Data.UserId != "" {
+		if reply.Status.State != 0 || reply.Data.UserId == "" {
 			DebugW("auth", "err", reply, "url", G_config.AuthApi, "args", args)
 			err = common.ERR_AUTH_INVALID
 			return
